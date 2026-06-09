@@ -5,5 +5,3 @@ def check_time():
     print(f"The current time is: {now}")
 
 check_time()
-
-# [RUN_TEST]

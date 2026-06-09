@@ -5,53 +5,48 @@ import re
 import subprocess
 import os
 
-# Define your squad
-THINKER = "llama3.2:3b"
-CODER = "qwen2.5-coder:3b"
-ARCHIVIST = "llama3.2:1b" # Upgraded from JSON_GUY
+# --- THE TAG TEAM ---
+LEAD_DEV = "llama3.1:8b"
+ARCHIVIST = "llama3.2:1b"
 
 WORKSPACE_DIR = "agent_workspace"
 if not os.path.exists(WORKSPACE_DIR):
     os.makedirs(WORKSPACE_DIR)
 
-# --- STRICT PERSONAS ---
+# --- PERSONAS ---
 personas = {
-    CODER: f"""You are the Lead Developer. Write Python code to solve the user's prompt.
+    LEAD_DEV: f"""You are the Elite Solo Developer. Write Python code to solve the user's prompt only, no conversational text.
 Your current working directory is: {os.getcwd()}
 STRICT RULES:
 1. You MUST wrap your code in standard ```python ... ``` markdown blocks.
-2. If you want to test your code, end your message with the exact keyword: [RUN_TEST].
-3. Keep conversational text under 30 words.""",
+2. use input() it is absolutely necessary.
+3. If you want to test your code, end your message with the exact keyword: [RUN_TEST].""",
 
-    THINKER: """You are the Senior Architect. 
-STRICT RULES:
-1. Break down the user's request into clear, technical steps for the Coder to follow.
-2. You only speak ONCE at the start of the project. Do not write code.
-3. Keep conversational text under 40 words.""",
-
-    ARCHIVIST: """You are the System Archivist. The Thinker just approved working code.
+    ARCHIVIST: """You are the System Archivist. You only speak when the user approves working code.
 Look at the conversation and determine what the code does.
 STRICT RULES:
-1. Invent a short, unique filename for this script (e.g., task_manager.py, file_reader.py).
+1. Invent a short, unique filename for this script (e.g., git_parser.py, file_reader.py).
 2. You MUST output ONLY the filename using this exact format: [SAVE_AS: your_custom_name.py]
-3. Do not include any other conversational text. Do not write code."""
+3. Do not include any other conversational text."""
 }
 
+def get_existing_files():
+    return [f for f in os.listdir(WORKSPACE_DIR) if f.endswith('.py')]
+
 def chat_with_agent(model_name, history, color):
+    """Streams the AI's response to the terminal word-by-word like a typewriter."""
     messages = [{"role": "system", "content": personas[model_name]}] + history
-    
-    # stream=True tells Ollama to send the text back in tiny chunks
     response = ollama.chat(model=model_name, messages=messages, stream=True)
     
     full_reply = ""
-    print(color, end="") # Turn on the agent's color
+    print(color, end="") # Turn on agent color
     
     for chunk in response:
         word = chunk['message']['content']
-        print(word, end="", flush=True) # flush=True forces the terminal to instantly draw the text
+        print(word, end="", flush=True) # Typewriter effect
         full_reply += word
         
-    print("\033[0m\n") # Turn off the color and add a newline when they finish speaking
+    print("\033[0m\n") # Turn off color
     return full_reply
 
 def extract_and_run_code(text):
@@ -85,61 +80,39 @@ def extract_and_run_code(text):
         feedback = input("What was the error, or what needs changing?: ")
         return f"[NYMO_REJECTED]\nNymo's feedback: {feedback}\nCoder, fix this immediately."
     
-def get_existing_files():
-    """Reads the workspace folder to see what tools already exist."""
-    return [f for f in os.listdir(WORKSPACE_DIR) if f.endswith('.py')]
-
-print("--- AI Build Team Booting Up ---")
-user_topic = input("Nymo, what are we building?: ")
+print(f"--- Booting Tag Team (Lead: {LEAD_DEV} | Archivist: {ARCHIVIST}) ---")
+user_topic = input("\nNymo, what are we building?: ")
 
 history = [{"role": "user", "content": user_topic}]
-current_speaker = THINKER 
+current_speaker = LEAD_DEV
 
 print("\n--- The Build Loop Begins ---\n")
 
 try:
     while True:
-        # Determine who is speaking and their color BEFORE they type
-        color = "\033[92m" if current_speaker == CODER else "\033[94m" if current_speaker == THINKER else "\033[93m"
-        name = "💻 CODER" if current_speaker == CODER else "🧠 THINKER" if current_speaker == THINKER else "🗄️ ARCHIVIST"
+        color = "\033[94m" if current_speaker == LEAD_DEV else "\033[93m"
+        name = "🧠 LEAD DEV" if current_speaker == LEAD_DEV else "🗄️ ARCHIVIST"
 
-        reply = ""
-        retries = 0
-        while not reply.strip() and retries < 3:
-            print(f"{color}--- {name} ---") # Print the nameplate
-            reply = chat_with_agent(current_speaker, history, color) # Starts the live typewriter effect
-            
-            retries += 1
-            if not reply.strip():
-                print(f"\033[91m   [!] Agent stayed silent. Retrying ({retries}/3)...\033[0m")
-                time.sleep(1)
-                
+        print(f"{color}--- {name} ---")
+        reply = chat_with_agent(current_speaker, history, color)
+
         if not reply.strip():
-            reply = "[System Error: Agent completely failed to respond.]"
+            reply = "[System Error: Agent stayed silent.]"
 
         # --- LOGIC ROUTER ---
-        if current_speaker == THINKER:
-            history.append({"role": "user", "content": f"Thinker said: {reply}"})
-            # Thinker's job is done. Pass the blueprint directly to the Coder.
-            history.append({"role": "user", "content": "Coder, write the code based on the Thinker's instructions. End with [RUN_TEST]."})
-            current_speaker = CODER
-            
-        elif current_speaker == CODER:
-            history.append({"role": "user", "content": f"Coder said: {reply}"})
+        if current_speaker == LEAD_DEV:
+            history.append({"role": "user", "content": f"Lead Dev said: {reply}"})
             
             if "[RUN_TEST]" in reply.upper():
                 terminal_output = extract_and_run_code(reply)
                 print(f"\033[90m{terminal_output}\033[0m\n")
                 
                 if "[NYMO_APPROVED]" in terminal_output:
-                    # Nymo approved. Bypass Thinker, go straight to Archivist.
                     existing = get_existing_files()
-                    history.append({"role": "user", "content": f"Nymo approved the code! Archivist, existing files in our workspace are: {existing}. Invent a unique, descriptive name based on the code's function and output ONLY [SAVE_AS: your_chosen_name.py]."})
+                    history.append({"role": "user", "content": f"Nymo approved the code! Archivist, existing files in our workspace: {existing}. Invent a unique, descriptive name based on the code's function and output ONLY [SAVE_AS: your_chosen_name.py]."})
                     current_speaker = ARCHIVIST
                 else:
-                    # Nymo rejected. Feed error directly back to Coder.
-                    history.append({"role": "user", "content": f"System/Nymo Feedback:\n{terminal_output}\nCoder, fix the code and end with [RUN_TEST]."})
-                    # current_speaker stays CODER
+                    history.append({"role": "user", "content": f"System/Nymo Feedback:\n{terminal_output}\nFix the code and end with [RUN_TEST]."})
             else:
                 history.append({"role": "user", "content": "You forgot the [RUN_TEST] tag. Please test your code."})
                 
@@ -160,10 +133,9 @@ try:
             else:
                 history.append({"role": "user", "content": "You forgot the [SAVE_AS: filename.py] tag. Try again."})
             
+        # Memory limit to keep context fast
         if len(history) > 8:
             history = [history[0]] + history[-7:]
-            
-        time.sleep(2)
 
 except KeyboardInterrupt:
     print("\n\n🛑 Nymo pulled the plug. Team dismissed.")
