@@ -2,10 +2,9 @@ import os
 import time
 import sys
 from groq import Groq
+from dotenv import load_dotenv
 
-# We will drop your API key here when you are ready to test it
-GROQ_API_KEY = "***ROTATED-REMOVED***"
-os.environ["GROQ_API_KEY"] = GROQ_API_KEY
+load_dotenv()  # Rotate this — GROQ_API_KEY was hardcoded here, now read from .env
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 MODEL = "llama-3.3-70b-versatile" # This is a 70B model running at Groq speed
